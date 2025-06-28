@@ -35,8 +35,9 @@ To address this challenge, I have developed a **SMART TRAFFIC LIGHT SYSTEM** tha
     -HTTPClient (usually comes with the ESP32 core)
 
 **ESP32 Code (C++ code)**
+
 <pre>
-#include <WiFi.h>
+    #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include "esp_camera.h"
