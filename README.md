@@ -36,7 +36,6 @@ To address this challenge, I have developed a **SMART TRAFFIC LIGHT SYSTEM** tha
 
 **ESP32 Code (C++ code)**
 <pre>
-
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
@@ -214,7 +213,6 @@ void sendDataToServer(const uint8_t * image_buffer, size_t image_len, int distan
 
   http.end();
 }
-
 </pre>
 
 
