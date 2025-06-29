@@ -29,10 +29,10 @@ To address this challenge, I have developed a **SMART TRAFFIC LIGHT SYSTEM** tha
 *First We have to build the circuit and configure the ESP32-CAM modules.* 
 **Prerequisites** for Arduino IDE ->
 
-    -Install the ESP32 board in your Arduino IDE.
-    -Install the following libraries from the Library Manager:
-    -ArduinoJson by Benoit Blanchon
-    -HTTPClient (usually comes with the ESP32 core)
+-Install the ESP32 board in your Arduino IDE.
+-Install the following libraries from the Library Manager:
+-ArduinoJson by Benoit Blanchon
+-HTTPClient (usually comes with the ESP32 core)
 
 **ESP32 Code (C++ code)**
 
