@@ -227,3 +227,202 @@ Download YOLOv3 files:
     -coco.names
 You can get these files from the official YOLO website or various GitHub repositories. Place them in the same directory as your Jupyter Notebook.
 Install Dependencies-
+```
+pip install flask opencv-python numpy
+```
+
+## 3) Import Libraries and Initialize
+```
+import cv2
+import numpy as np
+import time
+from flask import Flask, request, jsonify
+import threading
+```
+
+## 4) Global State Variables
+This dictionary will store the latest data from each direction
+
+```
+traffic_data = {
+    'north': {'vehicle_count': 0, 'distance': 999, 'timestamp': 0},
+    'south': {'vehicle_count': 0, 'distance': 999, 'timestamp': 0},
+    'east': {'vehicle_count': 0, 'distance': 999, 'timestamp': 0},
+    'west': {'vehicle_count': 0, 'distance': 999, 'timestamp': 0}
+}
+```
+
+## 5) YOLOv3 Model Setup
+```
+# Load YOLOv3
+net = cv2.dnn.readNet("yolov3.weights", "yolov3.cfg")
+layer_names = net.getLayerNames()
+# Get the names of the output layers by finding their indices in the list of all layer names
+output_layers = [layer_names[i - 1] for i in net.getUnconnectedOutLayers()]
+
+
+with open("coco.names", "r") as f:
+    classes = [line.strip() for line in f.readlines()]
+
+# Vehicle classes in COCO dataset
+vehicle_classes = ["car", "motorbike", "bus", "truck"]
+
+print("YOLOv3 Model Loaded Successfully.")
+```
+
+## 6) Helper Function for Vehicle Counting
+
+```
+def get_vehicle_count_yolo(image):
+    """
+    Takes an image as input and returns the count of detected vehicles using YOLOv3.
+    """
+    height, width, channels = image.shape
+    
+    # Create a blob from the image and perform a forward pass of YOLO
+    blob = cv2.dnn.blobFromImage(image, 0.00392, (416, 416), (0, 0, 0), True, crop=False)
+    net.setInput(blob)
+    outs = net.forward(output_layers)
+    
+    class_ids = []
+    confidences = []
+    boxes = []
+    
+    # Process the outputs
+    for out in outs:
+        for detection in out:
+            scores = detection[5:]
+            class_id = np.argmax(scores)
+            confidence = scores[class_id]
+            
+            if confidence > 0.5 and classes[class_id] in vehicle_classes:
+                # Object detected
+                center_x = int(detection[0] * width)
+                center_y = int(detection[1] * height)
+                w = int(detection[2] * width)
+                h = int(detection[3] * height)
+                
+                # Rectangle coordinates
+                x = int(center_x - w / 2)
+                y = int(center_y - h / 2)
+                
+                boxes.append([x, y, w, h])
+                confidences.append(float(confidence))
+                class_ids.append(class_id)
+                
+    # Apply Non-Max Suppression to remove redundant overlapping boxes
+    indexes = cv2.dnn.NMSBoxes(boxes, confidences, 0.5, 0.4)
+    
+    return len(indexes) if isinstance(indexes, np.ndarray) else 0
+```
+
+## 7) Adaptive Timer Calculation Logic
+```
+def calculate_adaptive_green_times(current_traffic_data):
+    """
+    Calculates ns_green and ew_green based on the latest traffic data.
+    The ultrasonic sensor data can be used to estimate queue length.
+    A lower distance means a longer queue.
+    """
+    # Define timing constraints
+    MIN_GREEN = 15
+    MAX_GREEN = 60
+    YELLOW_TIME = 3
+    ALL_RED_TIME = 2
+    CYCLE_LENGTH = 120
+    
+    available_green_time = CYCLE_LENGTH - 2 * (YELLOW_TIME + ALL_RED_TIME)
+
+    # Calculate demand scores for each direction (combining vehicle count and queue length)
+    demand_scores = {}
+    for direction, data in current_traffic_data.items():
+        # Weight vehicle count more heavily
+        count_score = data['vehicle_count'] * 2.0
+        
+        # Inversely score distance (lower distance = higher score)
+        # Assuming max distance is 300cm.
+        queue_score = max(0, (300 - data['distance']) / 100.0) 
+        
+        demand_scores[direction] = count_score + queue_score
+
+    # Calculate combined demand for opposing directions
+    ns_demand = demand_scores['north'] + demand_scores['south']
+    ew_demand = demand_scores['east'] + demand_scores['west']
+    total_demand = ns_demand + ew_demand
+    
+    if total_demand == 0:
+        ns_green = available_green_time / 2
+        ew_green = available_green_time / 2
+    else:
+        # Proportional allocation
+        ns_ratio = ns_demand / total_demand
+        ns_green = MIN_GREEN + (ns_ratio * (available_green_time - 2 * MIN_GREEN))
+        ew_green = MIN_GREEN + ((1 - ns_ratio) * (available_green_time - 2 * MIN_GREEN))
+
+    # Apply min/max constraints
+    ns_green = max(MIN_GREEN, min(ns_green, MAX_GREEN))
+    ew_green = max(MIN_GREEN, min(ew_green, MAX_GREEN))
+    
+    return {
+        'ns_green': int(ns_green),
+        'ew_green': int(ew_green)
+    }
+```
+
+## 8) Flask Web Server
+```
+app = Flask(__name__)
+
+@app.route('/update_traffic', methods=['POST'])
+def update_traffic():
+    global traffic_data
+    
+    # Get data from the request
+    direction = request.form.get('direction')
+    distance = int(request.form.get('distance', 999))
+    image_file = request.files.get('image')
+    
+    if not all([direction, image_file]):
+        return jsonify({"error": "Missing data"}), 400
+
+    # Convert image file to OpenCV format
+    image_stream = image_file.read()
+    np_arr = np.frombuffer(image_stream, np.uint8)
+    image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+
+    # Get vehicle count using YOLOv3
+    vehicle_count = get_vehicle_count_yolo(image)
+    
+    print(f"Received data from {direction}: Vehicle Count = {vehicle_count}, Distance = {distance}cm")
+
+    # Update the global state
+    traffic_data[direction] = {
+        'vehicle_count': vehicle_count,
+        'distance': distance,
+        'timestamp': time.time()
+    }
+
+    # Calculate the new timer states using the most recent data from all directions
+    updated_timers = calculate_adaptive_green_times(traffic_data)
+    
+    print(f"Calculated Timers: {updated_timers}")
+    
+    # Return the updated timers to the ESP32
+    return jsonify(updated_timers)
+```
+
+## 9) Running Flask APP
+
+```
+# This allows the Jupyter notebook to remain responsive.
+def run_app():
+    # Use '0.0.0.0' to make the server accessible on your local network
+    app.run(host='0.0.0.0', port=5000)
+
+flask_thread = threading.Thread(target=run_app)
+flask_thread.daemon = True
+flask_thread.start()
+
+print("Flask server is running on port 5000. Your ESP32s should connect to this machine's IP address.")
+```
+
