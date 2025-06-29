@@ -34,6 +34,8 @@ To address this challenge, I have developed a **SMART TRAFFIC LIGHT SYSTEM** tha
 3) ArduinoJson by Benoit Blanchon
 4) HTTPClient (usually comes with the ESP32 core)
 
+This code is for a single ESP32 unit. You will flash this same code onto all four ESP32 devices, changing only the DIRECTION identifier for each one.
+
 **ESP32 Code (C++ code)**
 
 ```
